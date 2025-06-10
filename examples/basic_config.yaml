@@ -1,0 +1,40 @@
+# Basic FlowBridge Configuration Example
+# This configuration demonstrates core features with minimal setup
+
+general:
+  # Maximum time to wait for destination response
+  route_timeout: 2  # seconds
+  # Log file rotation size
+  log_rotation: 200mb
+
+server:
+  # Server binding configuration
+  host: 0.0.0.0  # Listen on all interfaces
+  port: 8000     # Default HTTP port
+  workers: 1     # Single worker process
+  log_level: info  # Standard logging level
+
+filtering:
+  # Action when no rules match
+  default_action: drop
+  conditions:
+    # Combine all rules with AND logic
+    logic: AND
+    rules:
+      # Only process alert type objects
+      - field: objectType
+        operator: equals
+        value: alert
+      # With creation operation
+      - field: operation
+        operator: equals
+        value: Creation
+
+routes:
+  # Route based on the alert title
+  - field: object.title
+    mappings:
+      # Map specific alert types to destinations
+      security-alert: http://security-team/alerts/
+      system-alert: http://sysadmin/alerts/
+      network-alert: http://netops/alerts/ 

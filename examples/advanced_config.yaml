@@ -1,0 +1,65 @@
+# Advanced FlowBridge Configuration Example
+# This configuration demonstrates advanced features and complex scenarios
+
+general:
+  route_timeout: 5  # Increased timeout for complex processing
+  log_rotation: 500mb  # Larger log rotation for high traffic
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 4  # Multiple workers for higher throughput
+  log_level: debug  # Detailed logging for monitoring
+
+filtering:
+  default_action: drop
+  conditions:
+    logic: OR  # Any matching condition will allow processing
+    rules:
+      # High priority security alerts
+      - field: severity
+        operator: greater_than
+        value: 7
+      
+      # Specific threat categories
+      - field: categories
+        operator: contains_any
+        value: 
+          - malware
+          - intrusion
+          - data_leak
+      
+      # Geographic filtering
+      - field: source.location
+        operator: in
+        value:
+          - US
+          - EU
+          - APAC
+      
+      # Complex nested field matching
+      - field: details.analysis.confidence
+        operator: greater_than
+        value: 0.85
+
+routes:
+  # Route by severity level
+  - field: severity
+    mappings:
+      8: http://high-priority/alerts/
+      9: http://critical/alerts/
+      10: http://emergency/alerts/
+  
+  # Route by threat category
+  - field: categories.0  # First category in the list
+    mappings:
+      malware: http://malware-team/process/
+      intrusion: http://soc/investigate/
+      data_leak: http://dlp/analyze/
+  
+  # Geographic routing
+  - field: source.location
+    mappings:
+      US: http://us-dc/events/
+      EU: http://eu-dc/events/
+      APAC: http://apac-dc/events/ 
