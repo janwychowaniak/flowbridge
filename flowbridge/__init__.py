@@ -12,7 +12,8 @@ from .utils.errors import (
     FlowBridgeError,
     ConfigurationError,
     ValidationError,
-    EnvironmentVariableError
+    EnvironmentVariableError,
+    InvalidRequestError,
 )
 from .config.models import (
     GeneralConfig,
@@ -25,6 +26,10 @@ from .config.models import (
     ConfigModel
 )
 from .config.loader import load_config
+from .core.context import RequestContext
+from .app import create_app
+from .api.handlers import bp
+from .api.middleware import RequestPreprocessor, validate_json_request
 
 __all__ = [
     "FlowBridgeError",
@@ -40,4 +45,10 @@ __all__ = [
     "RouteMapping",
     "ConfigModel",
     "load_config",
+    "InvalidRequestError",
+    "RequestContext",
+    "create_app",
+    "bp",
+    "RequestPreprocessor",
+    "validate_json_request",
 ]

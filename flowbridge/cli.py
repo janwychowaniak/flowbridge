@@ -1,111 +1,83 @@
-from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import List, Optional
 import sys
 
+import click
 from loguru import logger
 from pydantic import ValidationError
 
 from flowbridge.config.loader import load_config
 from flowbridge.utils.errors import FlowBridgeError
 from flowbridge.utils.logging_utils import setup_logging
+from flowbridge.app import create_app
 
 __version__ = "0.1.0"
 
-def create_argument_parser() -> ArgumentParser:
-    """Create and configure the argument parser for FlowBridge CLI.
-    
-    Returns:
-        ArgumentParser: Configured argument parser instance
-    """
-    parser = ArgumentParser(
-        prog="flowbridge",
-        description="FlowBridge - Content-aware HTTP JSON traffic router"
-    )
-    
-    parser.add_argument(
-        "--config", "-c",
-        type=str,
+@click.group()
+def cli() -> None:
+    """FlowBridge - HTTP JSON Traffic Router"""
+    pass
+
+@cli.command()
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True),
         required=True,
-        help="Path to the YAML configuration file"
-    )
-    
-    parser.add_argument(
-        "--validate-only",
-        action="store_true",
-        help="Validate configuration without starting the application"
-    )
-    
-    parser.add_argument(
+    help="Path to configuration file",
+)
+@click.option(
         "--log-level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default=None,
-        help="Override log level from configuration"
-    )
-    
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"FlowBridge v{__version__}"
-    )
-    
-    return parser
-
-def validate_config_path(config_path: str) -> Path:
-    """Validate that the configuration file exists and is readable.
-    
-    Args:
-        config_path: Path to the configuration file
-        
-    Returns:
-        Path: Validated Path object
-        
-    Raises:
-        FlowBridgeError: If the file doesn't exist or isn't readable
-    """
-    path = Path(config_path)
-    if not path.exists():
-        raise FlowBridgeError(f"Configuration file not found: {config_path}")
-    if not path.is_file():
-        raise FlowBridgeError(f"Configuration path is not a file: {config_path}")
-    return path
-
-def main(args: Optional[List[str]] = None) -> int:
-    """Main entry point for the FlowBridge application.
-    
-    Args:
-        args: Optional list of command line arguments
-        
-    Returns:
-        int: Exit code (0 for success, non-zero for failure)
-    """
-    parser = create_argument_parser()
-    parsed_args = parser.parse_args(args)
-    
+    "-l",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="INFO",
+    help="Set logging level",
+)
+@click.option(
+    "--validate-only",
+    is_flag=True,
+    help="Validate configuration without starting the application",
+)
+def serve(config: str, log_level: str, validate_only: bool) -> None:
+    """Start the FlowBridge server."""
     try:
-        config_path = validate_config_path(parsed_args.config)
-        
-        # Setup logging first
-        log_level = parsed_args.log_level or "INFO"
+        # Setup logging
         setup_logging(log_level)
         
         # Load and validate configuration
-        config = load_config(str(config_path))
-        logger.info(f"Configuration loaded successfully from {config_path}")
+        logger.info(f"Loading configuration from: {config}")
+        app_config = load_config(config)
         
-        if parsed_args.validate_only:
+        if validate_only:
             logger.info("Configuration validation successful")
-            return 0
-            
-        # TODO: Start application server here in future stages
-        return 0
+            sys.exit(0)
         
-    except (FlowBridgeError, ValidationError) as e:
-        logger.error(f"Configuration error: {str(e)}")
-        return 1
+        logger.info("Starting FlowBridge server")
+        app = create_app(app_config)
+        
+        # Extract server config
+        server_config = app_config.server
+        logger.info(f"Server will listen on {server_config.host}:{server_config.port}")
+        
+        # Run the Flask app
+        app.run(
+            host=server_config.host,
+            port=server_config.port,
+            debug=log_level.upper() == "DEBUG"
+        )
+    except FlowBridgeError as e:
+        logger.error(f"Failed to start server: {e}")
+        sys.exit(1)
+    except ValidationError as e:
+        logger.error(f"Configuration validation error: {e}")
+        sys.exit(1)
     except Exception as e:
-        logger.exception("Unexpected error occurred")
-        return 1
+        logger.exception("Unexpected error while starting server")
+        sys.exit(1)
+
+@cli.command()
+def version() -> None:
+    """Show FlowBridge version."""
+    click.echo(f"FlowBridge v{__version__}")
 
 if __name__ == "__main__":
-    sys.exit(main())
+    cli()

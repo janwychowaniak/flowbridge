@@ -41,3 +41,7 @@ class ValidationError(ConfigurationError):
 class EnvironmentVariableError(ConfigurationError):
     """Raised when required environment variables are missing."""
     pass
+
+class InvalidRequestError(ConfigurationError):
+    """Raised when configuration validation fails."""
+    pass
