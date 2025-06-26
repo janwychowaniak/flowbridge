@@ -1,26 +1,12 @@
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 from loguru import logger
-from pydantic import BaseModel
 
 from .field_extractor import FieldExtractor, FieldExtractionResult
-
-
-class FilterOperator(str, Enum):
-    """Supported filter operators."""
-    EQUALS = "equals"
-    NOT_EQUALS = "not_equals"
-    IN = "in"
-    CONTAINS_ANY = "contains_any"
-    LESS_THAN = "less_than"
-    GREATER_THAN = "greater_than"
-
-
-class LogicOperator(str, Enum):
-    """Logic operators for combining multiple rules."""
-    AND = "AND"
-    OR = "OR"
+from flowbridge.config.models import (
+    FilteringConfig, FilterCondition, FilterConditions,
+    FilterOperator, LogicOperator
+)
 
 
 @dataclass
@@ -110,27 +96,14 @@ class FilterEvaluator:
             return False
 
 
-class FilterRule(BaseModel):
-    """Pydantic model for a single filter rule."""
-    field: str
-    operator: FilterOperator
-    value: Any
-
-
-class FilterConfig(BaseModel):
-    """Pydantic model for filter configuration."""
-    default_action: str  # "drop" or "pass"
-    conditions: Dict[str, Any]  # Contains logic and rules
-
-
 class FilterEngine:
     """Main orchestrator for evaluating JSON payloads against filtering rules."""
     
-    def __init__(self, config: FilterConfig):
+    def __init__(self, config: FilteringConfig):
         """Initialize the filter engine with configuration.
         
         Args:
-            config: FilterConfig instance containing filtering rules
+            config: FilteringConfig instance containing filtering rules
         """
         self.config = config
         self.field_extractor = FieldExtractor()
@@ -139,13 +112,13 @@ class FilterEngine:
     def evaluate_single_rule(
         self, 
         payload: dict, 
-        rule: FilterRule
+        rule: FilterCondition
     ) -> Dict[str, Any]:
         """Evaluate a single filter rule against a payload.
         
         Args:
             payload: The JSON payload to evaluate
-            rule: The FilterRule to apply
+            rule: The FilterCondition to apply
             
         Returns:
             Dictionary containing rule evaluation results
@@ -178,7 +151,7 @@ class FilterEngine:
             result["error"] = str(e)
             logger.error(
                 "Rule evaluation failed",
-                rule=rule.dict(),
+                rule=rule.model_dump(),
                 error=str(e)
             )
             
@@ -227,8 +200,8 @@ class FilterEngine:
             )
             
         conditions = self.config.conditions
-        rules = [FilterRule(**rule) for rule in conditions.get("rules", [])]
-        logic = LogicOperator(conditions.get("logic", "AND"))
+        rules = conditions.rules
+        logic = conditions.logic
         
         rule_results = []
         rule_outcomes = []
@@ -238,13 +211,20 @@ class FilterEngine:
             rule_results.append(result)
             rule_outcomes.append(result["passed"])
             
-        # Handle empty rules case
+        # Evaluate rules and apply default action if they fail
         if not rules:
+            # This case should not happen due to validation, but handle gracefully
             passed = self.config.default_action == "pass"
             default_action_applied = True
         else:
-            passed = self.combine_results(rule_outcomes, logic)
-            default_action_applied = False
+            rules_passed = self.combine_results(rule_outcomes, logic)
+            if rules_passed:
+                passed = True
+                default_action_applied = False
+            else:
+                # Rules failed, apply default action
+                passed = self.config.default_action == "pass"
+                default_action_applied = True
             
         return FilterResult(
             passed=passed,

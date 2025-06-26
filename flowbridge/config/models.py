@@ -60,7 +60,7 @@ class FilterCondition(BaseModel):
     @classmethod
     def validate_field_path(cls, v: str) -> str:
         """Validate field path format."""
-        if not re.match(r'^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$', v):
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$', v):
             raise ValueError(
                 'Field path must be in dot notation and start with a letter (e.g., "object.type", "alert.severity")'
             )
@@ -99,7 +99,7 @@ class RouteMapping(BaseModel):
     @classmethod
     def validate_field_path(cls, v: str) -> str:
         """Validate field path format."""
-        if not re.match(r'^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$', v):
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)*$', v):
             raise ValueError(
                 'Field path must be in dot notation and start with a letter (e.g., "object.title", "alert.type")'
             )
