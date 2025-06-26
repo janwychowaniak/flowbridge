@@ -1,7 +1,29 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from uuid import UUID, uuid4
+
+from .filters import FilterResult
+
+@dataclass
+class FilteringContext:
+    """Tracks filtering results for a request."""
+    passed: bool = False
+    rules_evaluated: int = 0
+    rule_results: List[Dict[str, Any]] = field(default_factory=list)
+    default_action_applied: bool = False
+    error_message: Optional[str] = None
+
+    @classmethod
+    def from_filter_result(cls, result: FilterResult) -> 'FilteringContext':
+        """Create FilteringContext from FilterResult."""
+        return cls(
+            passed=result.passed,
+            rules_evaluated=result.rules_evaluated,
+            rule_results=result.rule_results,
+            default_action_applied=result.default_action_applied,
+            error_message=result.error_message
+        )
 
 @dataclass
 class RequestContext:
@@ -18,6 +40,7 @@ class RequestContext:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
     processing_stages: Dict[str, datetime] = field(default_factory=dict)
+    filtering: FilteringContext = field(default_factory=FilteringContext)
 
     def mark_stage(self, stage_name: str) -> None:
         """Mark a processing stage as completed."""
@@ -35,5 +58,12 @@ class RequestContext:
             "metadata": self.metadata,
             "processing_stages": {
                 k: v.isoformat() for k, v in self.processing_stages.items()
+            },
+            "filtering": {
+                "passed": self.filtering.passed,
+                "rules_evaluated": self.filtering.rules_evaluated,
+                "rule_results": self.filtering.rule_results,
+                "default_action_applied": self.filtering.default_action_applied,
+                "error_message": self.filtering.error_message
             }
         }
