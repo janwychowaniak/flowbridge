@@ -7,7 +7,7 @@ from werkzeug.exceptions import MethodNotAllowed
 
 from flowbridge.core.context import RequestContext
 from flowbridge.utils.errors import FlowBridgeError
-from flowbridge.api.handlers import bp as api_bp
+from flowbridge.api.handlers import bp as api_bp, init_handlers
 
 def create_app(config: Optional[BaseModel] = None) -> Flask:
     """
@@ -28,6 +28,10 @@ def create_app(config: Optional[BaseModel] = None) -> Flask:
     if config:
         app.config["GENERAL_CONFIG"] = config.general
         app.config["SERVER_CONFIG"] = config.server
+        
+        # Initialize handlers with configuration
+        logger.info("Initializing API handlers with configuration")
+        init_handlers(config)
 
     @app.before_request
     def before_request() -> None:
