@@ -208,6 +208,173 @@ Warning: No log entries found
 3. Check disk space
 4. Ensure logging is enabled
 
+## Webhook Processing Issues
+
+### Request Format Errors
+
+#### Problem: Invalid JSON Payload
+```
+Error: Invalid JSON format
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 400 Bad Request
+```
+
+**Solution**:
+1. Validate JSON syntax before sending
+2. Ensure proper escaping of special characters
+3. Check for trailing commas or missing quotes
+4. Use JSON validator tools
+
+#### Problem: Missing Content-Type Header
+```
+Error: Missing or invalid Content-Type header
+- Expected: application/json
+- Found: text/plain
+```
+
+**Solution**:
+1. Include `Content-Type: application/json` header
+2. Verify header is set correctly in HTTP client
+3. Check for typos in header name or value
+
+#### Problem: Non-Dictionary Payload
+```
+Error: Payload must be a JSON object
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Payload type: string
+```
+
+**Solution**:
+1. Ensure payload is a JSON object (dictionary)
+2. Wrap array payloads in object structure
+3. Avoid sending primitive values (strings, numbers)
+
+### Filtering Stage Issues
+
+#### Problem: Request Unexpectedly Dropped
+```
+Response: Request dropped by filtering rules
+- Rules evaluated: 2
+- Default action applied: true
+- Result: dropped
+```
+
+**Solution**:
+1. Review filtering rules in configuration
+2. Check if payload fields match rule criteria
+3. Verify field paths are correct
+4. Consider adjusting default_action to "pass"
+
+#### Problem: Field Extraction Errors
+```
+Warning: Field extraction failed
+- Field path: object.details.severity
+- Error: Field not found in payload
+```
+
+**Solution**:
+1. Verify field exists in payload structure
+2. Check for typos in field path
+3. Ensure case sensitivity matches
+4. Consider using optional field handling
+
+#### Problem: Filtering Rules Not Applied
+```
+Warning: No filtering rules evaluated
+- Rules configured: 3
+- Rules evaluated: 0
+```
+
+**Solution**:
+1. Check filtering configuration syntax
+2. Verify rules are properly formatted
+3. Ensure logic operator is valid (AND/OR)
+4. Test with simplified rule set
+
+### Processing Pipeline Errors
+
+#### Problem: Internal Processing Error
+```
+Error: Internal server error during processing
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 500 Internal Server Error
+```
+
+**Solution**:
+1. Check application logs for detailed error
+2. Verify configuration is valid
+3. Ensure adequate system resources
+4. Restart application if needed
+
+#### Problem: Request Context Issues
+```
+Error: Request context corruption
+- Request ID: missing
+- Stage: unknown
+```
+
+**Solution**:
+1. Check middleware configuration
+2. Verify request processing order
+3. Ensure proper error handling
+4. Review application startup logs
+
+### Performance and Scalability
+
+#### Problem: Slow Webhook Response
+```
+Warning: Webhook processing taking too long
+- Average response time: 2.5 seconds
+- Expected: < 1 second
+```
+
+**Solution**:
+1. Optimize filtering rules complexity
+2. Reduce number of rules evaluated
+3. Check system resource usage
+4. Consider increasing worker processes
+
+#### Problem: Memory Usage During Processing
+```
+Warning: High memory usage during webhook processing
+- Memory per request: 50MB
+- Expected: < 10MB
+```
+
+**Solution**:
+1. Check for large JSON payloads
+2. Optimize field extraction logic
+3. Review filtering rule complexity
+4. Monitor garbage collection
+
+### Request Correlation Issues
+
+#### Problem: Missing Request ID
+```
+Error: Request ID not found in response
+- Endpoint: /webhook
+- Status: 200 OK
+```
+
+**Solution**:
+1. Verify middleware is properly configured
+2. Check request preprocessing
+3. Ensure error handling preserves request ID
+4. Review logging configuration
+
+#### Problem: Request ID Mismatch
+```
+Error: Request ID inconsistency
+- Header ID: 550e8400-e29b-41d4-a716-446655440000
+- Response ID: 778b2d1f-b234-4a12-9876-123456789abc
+```
+
+**Solution**:
+1. Check request context handling
+2. Verify concurrent request isolation
+3. Review error handling logic
+4. Ensure proper UUID generation
+
 ## Best Practices
 
 ### Configuration Management

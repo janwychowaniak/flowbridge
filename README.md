@@ -100,6 +100,151 @@ Use dot notation to access nested JSON fields:
 - `array.0.field`
 - `deeply.nested.field`
 
+## API Endpoints
+
+### Webhook Endpoint
+
+**POST /webhook**
+
+The primary business endpoint for JSON payload processing. Accepts JSON payloads, applies configured filtering rules, and either returns an immediate response (for dropped requests) or prepares the request for routing.
+
+#### Request Format
+
+```bash
+curl -X POST http://localhost:8000/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objectType": "alert",
+    "operation": "Creation",
+    "object": {
+      "title": "AP_McAfeeMsme-virusDetected",
+      "severity": 5
+    }
+  }'
+```
+
+#### Response Formats
+
+**Dropped Request (200 OK):**
+```json
+{
+  "status": "processed",
+  "result": "dropped",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "filtering_summary": {
+    "rules_evaluated": 2,
+    "default_action_applied": true,
+    "matched_rules": null
+  }
+}
+```
+
+**Passed Request (200 OK):**
+```json
+{
+  "status": "processing",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "Request passed filtering, proceeding to routing"
+}
+```
+
+**Error Response (400 Bad Request):**
+```json
+{
+  "error": "InvalidRequestError",
+  "message": "Invalid JSON format",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Operational Endpoints
+
+**GET /health**
+
+Health check endpoint for monitoring system status.
+
+```bash
+curl http://localhost:8000/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T10:30:00.123Z",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**GET /config**
+
+Returns the current application configuration.
+
+```bash
+curl http://localhost:8000/config
+```
+
+## Usage Examples
+
+### Example 1: Basic Alert Processing
+
+```bash
+# Send an alert that matches filtering rules
+curl -X POST http://localhost:8000/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objectType": "alert",
+    "operation": "Creation",
+    "object": {
+      "title": "Critical security alert",
+      "severity": 8
+    }
+  }'
+```
+
+### Example 2: Request That Gets Dropped
+
+```bash
+# Send a request that will be dropped by filtering
+curl -X POST http://localhost:8000/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objectType": "incident",
+    "operation": "Update",
+    "object": {
+      "title": "Maintenance notification",
+      "severity": 2
+    }
+  }'
+```
+
+### Example 3: Complex Nested Payload
+
+```bash
+# Send a complex nested payload
+curl -X POST http://localhost:8000/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objectType": "alert",
+    "operation": "Creation",
+    "metadata": {
+      "source": "security_system",
+      "priority": "high"
+    },
+    "object": {
+      "title": "AP_McAfeeMsme-virusDetected",
+      "details": {
+        "host": "server01",
+        "user": "admin",
+        "threat": {
+          "type": "malware",
+          "severity": 9
+        }
+      }
+    }
+  }'
+```
+
 ## Error Handling
 
 FlowBridge provides clear error messages for:
