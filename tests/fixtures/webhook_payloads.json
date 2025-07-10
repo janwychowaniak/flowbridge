@@ -1,0 +1,35 @@
+{
+    "valid_basic": {
+        "objectType": "alert",
+        "operation": "Creation",
+        "object": {
+            "title": "AP_McAfeeMsme-virusDetected",
+            "severity": 5
+        }
+    },
+    "valid_complex": {
+        "objectType": "alert",
+        "operation": "Creation",
+        "object": {
+            "title": "Critical malware detected",
+            "severity": 8,
+            "details": {
+                "source": "endpoint-123",
+                "timestamp": "2024-01-01T12:00:00Z"
+            }
+        }
+    },
+    "missing_fields": {
+        "objectType": "alert",
+        "object": {
+            "title": "Test Alert"
+        }
+    },
+    "wrong_type": {
+        "objectType": "notification",
+        "operation": "Creation",
+        "object": {
+            "title": "Test Notification"
+        }
+    }
+}

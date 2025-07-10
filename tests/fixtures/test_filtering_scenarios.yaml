@@ -1,0 +1,19 @@
+# tests/fixtures/test_filtering_scenarios.yaml
+# This file is for reference only - we'll load these scenarios differently
+empty_rules:
+  default_action: "pass"
+  conditions:
+    logic: "AND"
+    rules: []
+
+complex_rules:
+  default_action: "drop"
+  conditions:
+    logic: "OR"
+    rules:
+      - field: "object.severity"
+        operator: "greater_than"
+        value: 7
+      - field: "object.title"
+        operator: "contains_any"
+        value: ["virus", "malware", "trojan"]

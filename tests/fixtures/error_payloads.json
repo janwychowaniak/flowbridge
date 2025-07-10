@@ -1,0 +1,13 @@
+{
+    "invalid_json": "{ this is not valid JSON",
+    "empty_object": {},
+    "string_payload": "this is a string, not an object",
+    "number_payload": 42,
+    "boolean_payload": true,
+    "null_payload": null,
+    "array_root": [
+        {
+            "objectType": "alert"
+        }
+    ]
+}
