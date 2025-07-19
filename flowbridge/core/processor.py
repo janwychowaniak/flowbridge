@@ -6,17 +6,17 @@ from .models import (
     ProcessingResult,
     ProcessingStage,
     FilteringSummary,
+    RoutingSummary,
 )
-from .context import FilteringContext
+from .context import FilteringContext, RoutingContext
 from .filters import FilterEngine
+from .router import RoutingEngine
 from ..config.models import ConfigModel
-from ..utils.errors import ValidationError as AppValidationError
-
+from ..utils.errors import ValidationError as AppValidationError, RoutingError
 
 
 class ProcessingPipeline:
     """Main orchestrator for request processing flow."""
-
 
     def __init__(self, config: ConfigModel):
         """Initialize the processing pipeline.
@@ -26,7 +26,7 @@ class ProcessingPipeline:
         """
         self.config = config
         self.filter_engine = FilterEngine(config.filtering)
-
+        self.routing_engine = RoutingEngine(config.routes)
 
     def validate_request_payload(
         self, 
@@ -52,7 +52,6 @@ class ProcessingPipeline:
         
         # No schema validation - accept any dictionary structure
         return payload
-
 
     def process_webhook_request(
         self, 
@@ -117,21 +116,69 @@ class ProcessingPipeline:
                 return ProcessingResult(
                     request_context=request_context,
                     is_dropped=True,
-                    filtering_summary=filtering_summary
+                    filtering_summary=filtering_summary,
+                    stage=ProcessingStage.FILTERING
                 )
             
-            # Request passed filtering
+            # Stage 3: Routing
             logger.info(
                 "Request passed filtering rules, proceeding to routing",
                 request_id=str(request_context.request_id),
                 rules_evaluated=filter_result.rules_evaluated,
-                matched_rules=filtering_summary.matched_rules
+                matched_rules=filtering_summary.matched_rules,
+                stage=ProcessingStage.ROUTING.name
             )
-            request_context.mark_stage("routing_preparation")
+            request_context.mark_stage("routing")
+            
+            # Perform routing using RoutingEngine
+            routing_result = self.routing_engine.find_destination(validated_payload)
+            
+            # Update routing context
+            request_context.routing = RoutingContext.from_routing_result(
+                routing_result, 
+                total_rules=len(self.config.routes)
+            )
+            
+            # Create routing summary for HTTP response
+            routing_summary = RoutingSummary.from_routing_context(
+                request_context.routing
+            )
+            
+            # Check if routing was successful
+            if not routing_result.success:
+                logger.info(
+                    "Request routing failed",
+                    request_id=str(request_context.request_id),
+                    field_path=routing_result.field_path,
+                    error_message=routing_result.error_message,
+                    total_rules=len(self.config.routes)
+                )
+                return ProcessingResult(
+                    request_context=request_context,
+                    is_dropped=False,
+                    filtering_summary=filtering_summary,
+                    routing_summary=routing_summary,
+                    error_message=routing_result.error_message,
+                    error_type="ROUTING_ERROR",
+                    stage=ProcessingStage.ROUTING
+                )
+            
+            # Routing successful - ready for forwarding stage
+            logger.info(
+                "Request routing successful, ready for forwarding",
+                request_id=str(request_context.request_id),
+                destination_url=routing_result.destination_url,
+                matched_value=routing_result.matched_value,
+                rule_index=routing_result.rule_index
+            )
+            
+            # For now, return successful routing result (forwarding will be added in next step)
             return ProcessingResult(
                 request_context=request_context,
                 is_dropped=False,
-                filtering_summary=filtering_summary
+                filtering_summary=filtering_summary,
+                routing_summary=routing_summary,
+                stage=ProcessingStage.ROUTING
             )
             
         except Exception as e:

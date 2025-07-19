@@ -81,7 +81,7 @@ def webhook_handler() -> Dict[str, Any]:
         response_data = result.to_response()
         
         if result.is_dropped:
-            # Request was dropped - return immediate response
+            # Request was dropped by filtering
             logger.info(
                 "Webhook request processed - dropped",
                 request_id=str(request.ctx.request_id),
@@ -90,16 +90,45 @@ def webhook_handler() -> Dict[str, Any]:
             # Convert Pydantic model to dict for JSON serialization
             response_dict = response_data.model_dump() if hasattr(response_data, 'model_dump') else response_data
             return jsonify(response_dict), 200
+            
+        elif hasattr(response_data, 'model_dump'):
+            # Pydantic model response (RoutingFailureResponse, ForwardingFailureResponse, RoutedResponse)
+            response_dict = response_data.model_dump()
+            
+            # Determine appropriate HTTP status code based on response type
+            if hasattr(response_data, 'result'):
+                if response_data.result == "routing_failed":
+                    logger.info(
+                        "Webhook request processed - routing failed",
+                        request_id=str(request.ctx.request_id),
+                        result="routing_failed"
+                    )
+                    return jsonify(response_dict), 404  # No matching routing rule
+                elif response_data.result == "forwarding_failed":
+                    logger.info(
+                        "Webhook request processed - forwarding failed",
+                        request_id=str(request.ctx.request_id),
+                        result="forwarding_failed"
+                    )
+                    return jsonify(response_dict), 502  # Gateway error
+                elif response_data.result == "success":
+                    logger.info(
+                        "Webhook request processed - success",
+                        request_id=str(request.ctx.request_id),
+                        result="success"
+                    )
+                    return jsonify(response_dict), 200  # Success
+            
+            # Fallback for unknown Pydantic response types
+            return jsonify(response_dict), 200
+            
         else:
-            # Request passed filtering - prepared for routing
-            # In Stage 4, we just return a processing status
-            # Stage 5 will handle actual routing
+            # Dict response (fallback case)
             logger.info(
                 "Webhook request processed - passed filtering",
                 request_id=str(request.ctx.request_id),
                 result="passed"
             )
-            # response_data is already a dict for passed requests
             return jsonify(response_data), 200
             
     except ValidationError as e:
