@@ -149,7 +149,7 @@ class TestWebhookHandlers:
             assert response_data['status'] == 'processing'
             assert 'request_id' in response_data
             assert 'message' in response_data
-            assert 'routing' in response_data['message']
+            assert 'response type unclear' in response_data['message']  # Updated for Stage 5
             
             # Verify processing pipeline was called
             mock_pipeline.process_webhook_request.assert_called_once_with(payload)
@@ -432,7 +432,7 @@ class TestWebhookHandlers:
             assert response_data['status'] == 'processing'
             assert 'request_id' in response_data
             assert 'message' in response_data
-            assert 'routing' in response_data['message']
+            assert 'response type unclear' in response_data['message']  # Updated for Stage 5
             
             # Verify processing pipeline was called
             mock_pipeline.process_webhook_request.assert_called_once_with(payload)

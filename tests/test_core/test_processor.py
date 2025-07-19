@@ -370,7 +370,9 @@ class TestProcessingPipeline:
             assert isinstance(response, dict)
             assert response["status"] == "processing"
             assert response["request_id"] == str(request_context.request_id)
-            assert "proceeding to routing" in response["message"]
+            # With routing implemented, we expect a different message
+            assert "response type unclear" in response["message"]
+            assert response["stage"] == "ROUTING"
 
 
     def test_rules_fail_but_default_pass(

@@ -35,7 +35,7 @@ class TestFilteringStageIntegration:
             "objectType": "incident",  # Does not match "alert" rule
             "operation": "Creation",
             "object": {
-                "title": "Test incident",
+                "title": "Test Alert",
                 "severity": 3
             }
         }
@@ -87,12 +87,12 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        # Should return 200 with processing status (Stage 4 placeholder)
+        # Should return 200 with processing status (routing successful but no forwarding yet)
         assert response.status_code == 200
         
         response_data = response.get_json()
         assert response_data['status'] == 'processing'
-        assert response_data['message'] == 'Request passed filtering, proceeding to routing'
+        assert 'response type unclear' in response_data['message']  # Updated for Stage 5
         assert 'request_id' in response_data
     
 
@@ -109,7 +109,7 @@ class TestFilteringStageIntegration:
         payload = {
             "operation": "Creation",
             "object": {
-                "title": "Test payload",
+                "title": "Test Alert",
                 "severity": 2
             }
             # Missing "objectType" field
@@ -148,7 +148,7 @@ class TestFilteringStageIntegration:
             "objectType": "alert",
             "operation": "Creation",
             "object": {
-                "title": "Complex nested test",
+                "title": "Test Alert",  # Use routing-compatible value
                 "details": {
                     "level1": {
                         "level2": {
@@ -197,7 +197,7 @@ class TestFilteringStageIntegration:
         payload = {
             "objectType": "any",
             "operation": "any",
-            "object": {"title": "test"}
+            "object": {"title": "Test Alert"}  # Use routing-compatible value
         }
         
         response = client.post(
@@ -336,7 +336,7 @@ class TestFilteringStageIntegration:
         
         # Create varied payloads for concurrent testing
         payloads = [
-            {"objectType": "alert", "operation": "Creation", "index": i}
+            {"objectType": "alert", "operation": "Creation", "object": {"title": "Test Alert"}, "index": i}
             for i in range(10)
         ]
         
@@ -370,7 +370,7 @@ class TestFilteringStageIntegration:
         payload = {
             "objectType": "alert",
             "operation": "Creation",
-            "object": {"title": "correlation test"}
+            "object": {"title": "Test Alert"}
         }
         
         response = client.post(
@@ -404,6 +404,7 @@ class TestFilteringStageIntegration:
         
         # Create a large payload with nested structures
         large_object = {
+            "title": "Test Alert",  # Add routing-compatible title
             "large_array": [{"item": f"data_{i}"} for i in range(1000)],
             "nested_data": {
                 f"field_{i}": f"value_{i}" for i in range(100)
@@ -442,7 +443,7 @@ class TestFilteringStageIntegration:
         requests_data = [
             # Valid request
             {
-                'payload': {"objectType": "alert", "operation": "Creation"},
+                'payload': {"objectType": "alert", "operation": "Creation", "object": {"title": "Test Alert"}},
                 'expected_status': 200
             },
             # Invalid JSON
@@ -453,7 +454,7 @@ class TestFilteringStageIntegration:
             },
             # Another valid request
             {
-                'payload': {"objectType": "incident", "operation": "Update"},
+                'payload': {"objectType": "incident", "operation": "Update", "object": {"title": "Test Alert"}},
                 'expected_status': 200
             },
             # Non-dictionary payload
@@ -463,7 +464,7 @@ class TestFilteringStageIntegration:
             },
             # Final valid request
             {
-                'payload': {"objectType": "alert", "operation": "Creation"},
+                'payload': {"objectType": "alert", "operation": "Creation", "object": {"title": "Test Alert"}},
                 'expected_status': 200
             }
         ]
