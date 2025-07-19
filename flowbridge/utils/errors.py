@@ -42,6 +42,14 @@ class EnvironmentVariableError(ConfigurationError):
     """Raised when required environment variables are missing."""
     pass
 
-class InvalidRequestError(ConfigurationError):
-    """Raised when configuration validation fails."""
+class InvalidRequestError(FlowBridgeError):
+    """Raised when request validation fails."""
+    pass
+
+class RoutingError(FlowBridgeError):
+    """Raised when routing operations fail."""
+    pass
+
+class ForwardingError(FlowBridgeError):
+    """Raised when request forwarding fails."""
     pass
