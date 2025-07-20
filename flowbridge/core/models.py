@@ -13,6 +13,7 @@ class ProcessingStage(Enum):
     VALIDATION = auto()
     FILTERING = auto()
     ROUTING = auto()
+    FORWARDING = auto()
     COMPLETE = auto()
 
 

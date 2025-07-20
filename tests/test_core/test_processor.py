@@ -351,7 +351,10 @@ class TestProcessingPipeline:
         webhook_payloads: Dict[str, Any],
         request_context: RequestContext
     ):
-        """Test response generation for passed requests."""
+        """Test response generation for passed requests with successful forwarding."""
+        from flowbridge.core.forwarder import ForwardingResult
+        from flowbridge.core.models import RoutedResponse
+        
         # Configure mock filter engine: rules pass
         mock_filter_result = FilterResult(
             passed=True,
@@ -360,19 +363,36 @@ class TestProcessingPipeline:
             default_action_applied=False  # Rules passed, no default action needed
         )
         
-        with patch.object(processing_pipeline.filter_engine, 'evaluate_payload', return_value=mock_filter_result):
+        # Configure mock forwarder: forwarding succeeds
+        mock_forwarding_result = ForwardingResult(
+            success=True,
+            status_code=200,
+            headers={"Content-Type": "application/json"},
+            content=b'{"result": "success"}',
+            error_message=None,
+            error_type=None,
+            destination_url="http://localhost:5000/endpoint1",
+            response_time_ms=150.0
+        )
+        
+        with patch.object(processing_pipeline.filter_engine, 'evaluate_payload', return_value=mock_filter_result), \
+             patch.object(processing_pipeline.request_forwarder, 'forward_request', return_value=mock_forwarding_result):
             # Process valid payload
             payload = webhook_payloads["valid_basic"]
             result = processing_pipeline.process_webhook_request(payload, request_context)
 
+            # Verify the forwarding was successful in the result
+            assert result.request_context.forwarding.success == True
+            assert result.destination_response is not None
+
             # Test response generation
             response = result.to_response()
-            assert isinstance(response, dict)
-            assert response["status"] == "processing"
-            assert response["request_id"] == str(request_context.request_id)
-            # With routing implemented, we expect a different message
-            assert "response type unclear" in response["message"]
-            assert response["stage"] == "ROUTING"
+            assert isinstance(response, RoutedResponse)
+            assert response.status == "forwarded"
+            assert response.result == "success"
+            assert response.request_id == str(request_context.request_id)
+            assert response.destination_response.status_code == 200
+            assert response.destination_response.destination_url == "http://localhost:5000/endpoint1"
 
 
     def test_rules_fail_but_default_pass(

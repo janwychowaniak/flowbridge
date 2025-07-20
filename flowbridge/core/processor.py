@@ -7,12 +7,15 @@ from .models import (
     ProcessingStage,
     FilteringSummary,
     RoutingSummary,
+    ForwardingSummary,
+    DestinationResponse,
 )
-from .context import FilteringContext, RoutingContext
+from .context import FilteringContext, RoutingContext, ForwardingContext
 from .filters import FilterEngine
 from .router import RoutingEngine
+from .forwarder import RequestForwarder
 from ..config.models import ConfigModel
-from ..utils.errors import ValidationError as AppValidationError, RoutingError
+from ..utils.errors import ValidationError as AppValidationError, RoutingError, ForwardingError
 
 
 class ProcessingPipeline:
@@ -27,6 +30,7 @@ class ProcessingPipeline:
         self.config = config
         self.filter_engine = FilterEngine(config.filtering)
         self.routing_engine = RoutingEngine(config.routes)
+        self.request_forwarder = RequestForwarder(timeout=config.general.route_timeout)
 
     def validate_request_payload(
         self, 
@@ -77,7 +81,9 @@ class ProcessingPipeline:
         request_context.add_metadata("payload", payload)
         
         try:
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             # Stage 1: Validation (minimal - just ensure it's a dict)
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             logger.info(
                 "Starting request processing",
                 request_id=str(request_context.request_id),
@@ -86,7 +92,9 @@ class ProcessingPipeline:
             request_context.mark_stage("validation")
             validated_payload = self.validate_request_payload(payload)
             
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             # Stage 2: Filtering
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             logger.info(
                 "Request validation successful, proceeding to filtering",
                 request_id=str(request_context.request_id),
@@ -120,7 +128,9 @@ class ProcessingPipeline:
                     stage=ProcessingStage.FILTERING
                 )
             
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             # Stage 3: Routing
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             logger.info(
                 "Request passed filtering rules, proceeding to routing",
                 request_id=str(request_context.request_id),
@@ -163,23 +173,101 @@ class ProcessingPipeline:
                     stage=ProcessingStage.ROUTING
                 )
             
-            # Routing successful - ready for forwarding stage
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            # Stage 4: Forwarding
+            # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             logger.info(
-                "Request routing successful, ready for forwarding",
+                "Request routing successful, proceeding to forwarding",
                 request_id=str(request_context.request_id),
                 destination_url=routing_result.destination_url,
                 matched_value=routing_result.matched_value,
-                rule_index=routing_result.rule_index
+                rule_index=routing_result.rule_index,
+                stage=ProcessingStage.FORWARDING.name
             )
+            request_context.mark_stage("forwarding")
             
-            # For now, return successful routing result (forwarding will be added in next step)
-            return ProcessingResult(
-                request_context=request_context,
-                is_dropped=False,
-                filtering_summary=filtering_summary,
-                routing_summary=routing_summary,
-                stage=ProcessingStage.ROUTING
-            )
+            try:
+                # Prepare headers from original request
+                original_headers = {}
+                try:
+                    if hasattr(request, 'headers'):
+                        original_headers = dict(request.headers)
+                except RuntimeError:
+                    # No request context (e.g., in tests)
+                    original_headers = {}
+                
+                # Forward request to destination
+                forwarding_result = self.request_forwarder.forward_request(
+                    url=routing_result.destination_url,
+                    payload=validated_payload,
+                    original_headers=original_headers
+                )
+                
+                # Update forwarding context
+                request_context.forwarding = ForwardingContext.from_forwarding_result(forwarding_result)
+                
+                # Create forwarding summary for HTTP response
+                forwarding_summary = ForwardingSummary.from_forwarding_context(
+                    request_context.forwarding
+                )
+                
+                # Check if forwarding was successful
+                if not forwarding_result.success:
+                    logger.warning(
+                        "Request forwarding failed",
+                        request_id=str(request_context.request_id),
+                        destination_url=forwarding_result.destination_url,
+                        error_type=forwarding_result.error_type,
+                        error_message=forwarding_result.error_message,
+                        response_time_ms=forwarding_result.response_time_ms
+                    )
+                    return ProcessingResult(
+                        request_context=request_context,
+                        is_dropped=False,
+                        filtering_summary=filtering_summary,
+                        routing_summary=routing_summary,
+                        error_message=forwarding_result.error_message,
+                        error_type=forwarding_result.error_type,
+                        stage=ProcessingStage.FORWARDING
+                    )
+                
+                # Forwarding successful - create destination response
+                destination_response = DestinationResponse.from_forwarding_result(forwarding_result)
+                
+                logger.info(
+                    "Request forwarding successful",
+                    request_id=str(request_context.request_id),
+                    destination_url=forwarding_result.destination_url,
+                    status_code=forwarding_result.status_code,
+                    response_time_ms=forwarding_result.response_time_ms,
+                    content_length=len(forwarding_result.content) if forwarding_result.content else 0
+                )
+                
+                return ProcessingResult(
+                    request_context=request_context,
+                    is_dropped=False,
+                    filtering_summary=filtering_summary,
+                    routing_summary=routing_summary,
+                    destination_response=destination_response,
+                    stage=ProcessingStage.COMPLETE
+                )
+                
+            except Exception as e:
+                logger.error(
+                    "Unexpected error during request forwarding",
+                    request_id=str(request_context.request_id),
+                    destination_url=routing_result.destination_url,
+                    error=str(e)
+                )
+                return ProcessingResult(
+                    request_context=request_context,
+                    is_dropped=False,
+                    filtering_summary=filtering_summary,
+                    routing_summary=routing_summary,
+                    error_message=f"Forwarding error: {str(e)}",
+                    error_type="FORWARDING_ERROR",
+                    stage=ProcessingStage.FORWARDING
+                )
             
         except Exception as e:
             error_details = {
