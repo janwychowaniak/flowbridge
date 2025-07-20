@@ -87,13 +87,17 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        # Should return 200 with processing status (routing successful but no forwarding yet)
-        assert response.status_code == 200
+        # Should return 502 because forwarding to localhost:5000 fails (no server running)
+        assert response.status_code == 502
         
         response_data = response.get_json()
-        assert response_data['status'] == 'processing'
-        assert 'response type unclear' in response_data['message']  # Updated for Stage 5
+        assert response_data['status'] == 'failed'
+        assert response_data['result'] == 'forwarding_failed'
         assert 'request_id' in response_data
+        # Verify filtering and routing were successful
+        assert response_data['filtering_summary']['rules_evaluated'] == 2
+        assert response_data['routing_summary']['success'] == True
+        assert response_data['routing_summary']['destination_url'] == 'http://localhost:5000/endpoint1'
     
 
     def test_missing_fields_in_filtering_rules(self, app_with_filtering_config: Flask) -> None:
@@ -177,11 +181,12 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        # Should process successfully regardless of complexity
-        assert response.status_code == 200
+        # Should return 502 because forwarding to localhost:5000 fails (no server running)
+        assert response.status_code == 502
         
         response_data = response.get_json()
-        assert response_data['status'] in ['processed', 'processing']
+        assert response_data['status'] == 'failed'
+        assert response_data['result'] == 'forwarding_failed'
         assert 'request_id' in response_data
     
 
@@ -206,10 +211,13 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        assert response.status_code == 200
+        # Should return 502 because with empty rules and default_action="pass", 
+        # the request passes filtering and tries to forward, but fails
+        assert response.status_code == 502
         
         response_data = response.get_json()
-        assert response_data['status'] in ['processed', 'processing']
+        assert response_data['status'] == 'failed'
+        assert response_data['result'] == 'forwarding_failed'
         
         # With empty rules, default action should be applied
         if 'filtering_summary' in response_data:
@@ -349,8 +357,9 @@ class TestFilteringStageIntegration:
         assert len(results) == 10
         
         for result in results:
-            assert result['status_code'] == 200
-            assert result['data']['status'] in ['processed', 'processing']
+            assert result['status_code'] == 502  # Forwarding failures
+            assert result['data']['status'] == 'failed'
+            assert result['data']['result'] == 'forwarding_failed'
             assert result['request_id'] is not None
         
         # Validate all request IDs are unique (no interference)
@@ -358,7 +367,7 @@ class TestFilteringStageIntegration:
         assert len(set(request_ids)) == len(request_ids)
     
 
-    def test_request_correlation_across_pipeline(self, app_with_filtering_config: Flask) -> None:
+    def test_request_id_format_validation(self, app_with_filtering_config: Flask) -> None:
         """
         Test request correlation tracking across the complete pipeline.
         
@@ -379,7 +388,7 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 502  # Forwarding failure
         
         response_data = response.get_json()
         request_id = response_data.get('request_id')
@@ -388,9 +397,6 @@ class TestFilteringStageIntegration:
         assert request_id is not None
         assert len(request_id) == 36  # UUID format
         assert request_id.count('-') == 4  # UUID has 4 dashes
-        
-        # Validate request ID is consistent in response
-        assert response_data['request_id'] == request_id
     
 
     def test_memory_usage_large_payloads(self, app_with_filtering_config: Flask) -> None:
@@ -423,81 +429,293 @@ class TestFilteringStageIntegration:
             content_type='application/json'
         )
         
-        # Should handle large payloads successfully
-        assert response.status_code == 200
+        # Should return 502 because forwarding fails (large payload handled correctly)
+        assert response.status_code == 502
         
         response_data = response.get_json()
-        assert response_data['status'] in ['processed', 'processing']
+        assert response_data['status'] == 'failed'
+        assert response_data['result'] == 'forwarding_failed'
         assert 'request_id' in response_data
     
 
     def test_error_isolation_between_requests(self, app_with_filtering_config: Flask) -> None:
         """
-        Test that errors in individual requests don't affect other requests.
+        STRESS TEST: Concurrent error isolation under heavy load.
         
-        Validates system stability when processing mixed valid/invalid requests.
+        Validates system stability when processing many mixed valid/invalid 
+        requests simultaneously. Tests true error isolation, threading safety,
+        and system resilience under stress.
         """
+        import time
+        import random
+        
         client = app_with_filtering_config.test_client()
         
-        # Mix of valid and invalid requests
-        requests_data = [
-            # Valid request
+        def make_request(request_info: Dict[str, Any]) -> Dict[str, Any]:
+            """Execute a single request and return detailed results."""
+            start_time = time.time()
+            
+            try:
+                if request_info.get('raw_data'):
+                    # Send raw string data (malformed)
+                    response = client.post(
+                        '/webhook',
+                        data=request_info['payload'],
+                        content_type='application/json'
+                    )
+                else:
+                    # Send JSON data
+                    response = client.post(
+                        '/webhook',
+                        data=json.dumps(request_info['payload']),
+                        content_type='application/json'
+                    )
+                
+                response_time = time.time() - start_time
+                response_data = response.get_json()
+                
+                return {
+                    'expected': request_info['expected_status'],
+                    'actual': response.status_code,
+                    'response': response_data,
+                    'response_time': response_time,
+                    'request_type': request_info.get('type', 'unknown'),
+                    'success': response.status_code == request_info['expected_status'],
+                    'request_id': response_data.get('request_id') if response_data else None
+                }
+                
+            except Exception as e:
+                return {
+                    'expected': request_info['expected_status'],
+                    'actual': 500,
+                    'response': None,
+                    'response_time': time.time() - start_time,
+                    'request_type': request_info.get('type', 'unknown'),
+                    'success': False,
+                    'error': str(e),
+                    'request_id': None
+                }
+        
+        # EXPANDED STRESS TEST DATASET
+        base_requests = [
+            # === VALID REQUESTS (should succeed but fail forwarding) ===
             {
                 'payload': {"objectType": "alert", "operation": "Creation", "object": {"title": "Test Alert"}},
-                'expected_status': 200
+                'expected_status': 502,
+                'type': 'valid_forwarding_fail'
             },
-            # Invalid JSON
+            {
+                'payload': {"objectType": "alert", "operation": "Creation", "object": {"title": "Critical malware detected"}},
+                'expected_status': 502,
+                'type': 'valid_forwarding_fail'
+            },
+            
+            # === DROPPED REQUESTS (filtered out) ===
+            {
+                'payload': {"objectType": "incident", "operation": "Update", "object": {"title": "Test Alert"}},
+                'expected_status': 200,
+                'type': 'dropped_by_filter'
+            },
+            {
+                'payload': {"objectType": "notification", "operation": "Creation", "object": {"title": "Test"}},
+                'expected_status': 200,
+                'type': 'dropped_by_filter'
+            },
+            
+            # === MALFORMED JSON ERRORS ===
             {
                 'payload': '{"invalid": json}',
                 'expected_status': 400,
-                'raw_data': True
+                'raw_data': True,
+                'type': 'invalid_json'
             },
-            # Another valid request
             {
-                'payload': {"objectType": "incident", "operation": "Update", "object": {"title": "Test Alert"}},
-                'expected_status': 200
+                'payload': '{"unclosed": "string"',
+                'expected_status': 400,
+                'raw_data': True,
+                'type': 'invalid_json'
             },
-            # Non-dictionary payload
+            {
+                'payload': '{broken json here}',
+                'expected_status': 400,
+                'raw_data': True,
+                'type': 'invalid_json'
+            },
+            {
+                'payload': '{"trailing": "comma",}',
+                'expected_status': 400,
+                'raw_data': True,
+                'type': 'invalid_json'
+            },
+            
+            # === NON-DICTIONARY PAYLOADS ===
             {
                 'payload': "string payload",
-                'expected_status': 400
+                'expected_status': 400,
+                'type': 'non_dict_string'
             },
-            # Final valid request
             {
-                'payload': {"objectType": "alert", "operation": "Creation", "object": {"title": "Test Alert"}},
-                'expected_status': 200
+                'payload': 42,
+                'expected_status': 400,
+                'type': 'non_dict_number'
+            },
+            {
+                'payload': [1, 2, 3],
+                'expected_status': 400,
+                'type': 'non_dict_array'
+            },
+            {
+                'payload': True,
+                'expected_status': 400,
+                'type': 'non_dict_boolean'
+            },
+            {
+                'payload': None,
+                'expected_status': 400,
+                'type': 'non_dict_null'
+            },
+            
+            # === EDGE CASE PAYLOADS ===
+            {
+                'payload': {},
+                'expected_status': 200,
+                'type': 'empty_dict'
+            },
+            {
+                'payload': {"": ""},
+                'expected_status': 200,
+                'type': 'empty_strings'
+            },
+            {
+                'payload': {"null_field": None, "objectType": "alert", "operation": "Creation", "object": {"title": "AP_McAfeeMsme-virusDetected"}},
+                'expected_status': 502,
+                'type': 'null_fields'
+            },
+            
+            # === LARGE PAYLOADS (memory stress) ===
+            {
+                'payload': {
+                    "objectType": "alert",
+                    "operation": "Creation", 
+                    "object": {
+                        "title": "AP_McAfeeMsme-virusDetected",
+                        "large_data": "x" * 10000,  # 10KB string
+                        "big_array": [f"item_{i}" for i in range(500)],
+                        "nested": {"level" + str(i): f"value_{i}" for i in range(100)}
+                    }
+                },
+                'expected_status': 502,
+                'type': 'large_payload'
+            },
+            
+            # === DEEPLY NESTED PAYLOADS ===
+            {
+                'payload': {
+                    "objectType": "alert",
+                    "operation": "Creation",
+                    "object": {
+                        "title": "AP_McAfeeMsme-virusDetected",
+                        "deep": {"l1": {"l2": {"l3": {"l4": {"l5": {"l6": "deep_value"}}}}}}
+                    }
+                },
+                'expected_status': 502,
+                'type': 'deep_nesting'
+            },
+            
+            # === UNICODE AND SPECIAL CHARACTERS ===
+            {
+                'payload': {
+                    "objectType": "alert",
+                    "operation": "Creation",
+                    "object": {
+                        "title": "AP_McAfeeMsme-virusDetected",
+                        "unicode": "🚀💥🔥",
+                        "special": "line1\nline2\ttab",
+                        "quotes": 'mixed "quotes" here',
+                        "backslashes": "\\path\\to\\file"
+                    }
+                },
+                'expected_status': 502,
+                'type': 'unicode_special'
             }
         ]
         
-        results = []
-        for request_info in requests_data:
-            if request_info.get('raw_data'):
-                # Send raw string data
-                response = client.post(
-                    '/webhook',
-                    data=request_info['payload'],
-                    content_type='application/json'
-                )
-            else:
-                # Send JSON data
-                response = client.post(
-                    '/webhook',
-                    data=json.dumps(request_info['payload']),
-                    content_type='application/json'
-                )
-            
-            results.append({
-                'expected': request_info['expected_status'],
-                'actual': response.status_code,
-                'response': response.get_json()
-            })
+        # STRESS MULTIPLIER: Create many concurrent instances
+        stress_multiplier = 3  # Each request type appears 3 times
+        requests_data = []
         
-        # Validate each request got the expected response
+        for _ in range(stress_multiplier):
+            for req in base_requests:
+                # Add some randomization to make timing more realistic
+                req_copy = req.copy()
+                if req_copy.get('type') == 'valid_forwarding_fail':
+                    # Vary the titles with routing-compatible values from test config
+                    titles = ["AP_McAfeeMsme-virusDetected", "Critical malware detected", "Test Alert", "Test Notification"]
+                    req_copy['payload'] = req_copy['payload'].copy()
+                    req_copy['payload']['object'] = req_copy['payload']['object'].copy()
+                    req_copy['payload']['object']['title'] = random.choice(titles)
+                requests_data.append(req_copy)
+        
+        total_requests = len(requests_data)
+        print(f"\n🚀 STRESS TEST: Firing {total_requests} concurrent requests...")
+        
+        # EXECUTE ALL REQUESTS CONCURRENTLY 
+        start_time = time.time()
+        with ThreadPoolExecutor(max_workers=10) as executor:  # High concurrency!
+            futures = [executor.submit(make_request, req) for req in requests_data]
+            results = [future.result() for future in as_completed(futures)]
+        
+        total_time = time.time() - start_time
+        print(f"⚡ Completed {total_requests} requests in {total_time:.2f}s ({total_requests/total_time:.1f} req/s)")
+        
+        # === VALIDATION: STRESS TEST ANALYSIS ===
+        
+        # 1. Basic success validation
+        successful_results = [r for r in results if r['success']]
+        failed_results = [r for r in results if not r['success']]
+        
+        print(f"✅ Success rate: {len(successful_results)}/{total_requests} ({len(successful_results)/total_requests*100:.1f}%)")
+        
+        if failed_results:
+            print("❌ Failed requests:")
+            for fail in failed_results[:5]:  # Show first 5 failures
+                print(f"  - {fail['request_type']}: expected {fail['expected']}, got {fail['actual']}")
+        
+        # 2. All requests should get expected responses (error isolation test)
+        assert len(successful_results) == total_requests, f"Error isolation failed! {len(failed_results)} requests failed"
+        
+        # 3. Unique request IDs (no state corruption)
+        request_ids = [r['request_id'] for r in results if r['request_id']]
+        assert len(set(request_ids)) == len(request_ids), "Request ID collision detected!"
+        
+        # 4. Performance validation (no major slowdowns from errors)
+        avg_response_time = sum(r['response_time'] for r in results) / len(results)
+        max_response_time = max(r['response_time'] for r in results)
+        print(f"⏱️  Avg response time: {avg_response_time*1000:.1f}ms, Max: {max_response_time*1000:.1f}ms")
+        
+        # Should handle requests reasonably fast even under stress
+        assert avg_response_time < 1.0, f"Average response time too slow: {avg_response_time:.2f}s"
+        assert max_response_time < 3.0, f"Max response time too slow: {max_response_time:.2f}s"
+        
+        # 5. Validate different request types got correct responses
+        by_type = {}
         for result in results:
-            assert result['actual'] == result['expected']
+            req_type = result['request_type']
+            if req_type not in by_type:
+                by_type[req_type] = []
+            by_type[req_type].append(result)
         
-        # Validate valid requests were processed successfully
-        valid_responses = [r for r in results if r['expected'] == 200]
-        for response in valid_responses:
-            assert response['response']['status'] in ['processed', 'processing']
-            assert 'request_id' in response['response']
+        # Spot check a few categories
+        if 'valid_forwarding_fail' in by_type:
+            for result in by_type['valid_forwarding_fail']:
+                assert result['actual'] == 502, f"Valid request should fail forwarding: {result}"
+                
+        if 'invalid_json' in by_type:
+            for result in by_type['invalid_json']:
+                assert result['actual'] == 400, f"Invalid JSON should return 400: {result}"
+                
+        if 'dropped_by_filter' in by_type:
+            for result in by_type['dropped_by_filter']:
+                assert result['actual'] == 200, f"Filtered request should return 200: {result}"
+        
+        print(f"🎯 ERROR ISOLATION STRESS TEST PASSED! {total_requests} concurrent requests handled correctly.")
