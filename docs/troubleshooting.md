@@ -375,6 +375,425 @@ Error: Request ID inconsistency
 3. Review error handling logic
 4. Ensure proper UUID generation
 
+## Routing Stage Issues
+
+### Route Configuration Errors
+
+#### Problem: No Routing Rules Found
+```
+Error: No routing configuration found
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 500 Internal Server Error
+```
+
+**Solution**:
+1. Ensure `routes` section exists in configuration
+2. Verify route configuration syntax
+3. Check for YAML indentation errors
+4. Validate route mapping format
+
+#### Problem: Invalid Route Field Path
+```
+Error: Invalid routing field path
+- Field: object..title
+- Error: Empty field name in path
+```
+
+**Solution**:
+1. Remove duplicate dots in field path
+2. Verify field path syntax matches dot notation
+3. Check field exists in expected payloads
+4. Use proper nesting syntax (e.g., `object.details.title`)
+
+#### Problem: Empty Route Mappings
+```
+Configuration Error: Empty route mappings
+- Route field: object.title
+- Mappings count: 0
+```
+
+**Solution**:
+1. Add at least one mapping to routes
+2. Verify mapping syntax: `key: value`
+3. Ensure destination URLs are valid
+4. Check for duplicate mapping keys
+
+### Route Matching Issues
+
+#### Problem: No Route Match Found
+```
+Error: No routing rule matched
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 404 Not Found
+- Routing field: object.title
+- Routing value: "unknown-alert-type"
+- Rules checked: 1
+```
+
+**Solution**:
+1. Check if routing value exists in route mappings
+2. Verify exact string matching (case-sensitive)
+3. Add mapping for the specific value
+4. Consider using wildcard or default routes
+5. Check field extraction is working correctly
+
+#### Problem: Route Field Missing from Payload
+```
+Warning: Routing field not found in payload
+- Field path: object.title
+- Payload structure: {...}
+```
+
+**Solution**:
+1. Verify field exists in incoming payload
+2. Check field path spelling and case sensitivity
+3. Ensure payload structure matches expected format
+4. Consider using optional field handling
+
+#### Problem: Route Field Value is Null/Empty
+```
+Warning: Routing field value is null or empty
+- Field path: object.title
+- Field value: null
+```
+
+**Solution**:
+1. Check payload data quality at source
+2. Add validation for required fields
+3. Consider default value handling
+4. Review data transformation before routing
+
+### Route Performance Issues
+
+#### Problem: Slow Route Evaluation
+```
+Warning: Route evaluation taking too long
+- Evaluation time: 150ms
+- Expected: < 10ms
+- Rules checked: 100
+```
+
+**Solution**:
+1. Reduce number of route mappings
+2. Optimize route ordering (most common first)
+3. Consider route indexing strategies
+4. Review field extraction performance
+
+#### Problem: High Memory Usage in Routing
+```
+Warning: High memory usage during routing
+- Memory per route evaluation: 25MB
+- Expected: < 1MB
+```
+
+**Solution**:
+1. Check for large route mapping tables
+2. Optimize route data structures
+3. Review route caching strategies
+4. Consider route configuration compression
+
+## Forwarding Stage Issues
+
+### Network Connection Errors
+
+#### Problem: Connection Refused by Destination
+```
+Error: Failed to forward request to destination
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 502 Bad Gateway
+- Destination URL: http://dest_url_0/ep/
+- Error type: CONNECTION_ERROR
+```
+
+**Solution**:
+1. Verify destination service is running
+2. Check destination host and port
+3. Verify network connectivity to destination
+4. Check firewall rules between FlowBridge and destination
+5. Validate destination URL format
+
+#### Problem: DNS Resolution Failure
+```
+Error: Failed to resolve destination hostname
+- Destination URL: http://invalid-host.example.com/ep/
+- Error: Name resolution failed
+```
+
+**Solution**:
+1. Verify destination hostname is correct
+2. Check DNS server configuration
+3. Test DNS resolution manually (`nslookup`, `dig`)
+4. Consider using IP addresses instead of hostnames
+5. Check network DNS settings
+
+#### Problem: SSL/TLS Certificate Issues
+```
+Error: SSL certificate verification failed
+- Destination URL: https://dest_url_0/ep/
+- Error: Certificate verification failed
+```
+
+**Solution**:
+1. Verify destination SSL certificate validity
+2. Check certificate chain completeness
+3. Ensure certificate matches hostname
+4. Consider certificate authority trust issues
+5. Review SSL/TLS configuration
+
+### Timeout and Performance Issues
+
+#### Problem: Request Timeout to Destination
+```
+Error: Request timeout to destination
+- Request ID: 550e8400-e29b-41d4-a716-446655440000
+- Status: 504 Gateway Timeout
+- Destination URL: http://dest_url_0/ep/
+- Error type: TIMEOUT_ERROR
+- Timeout: 2 seconds
+```
+
+**Solution**:
+1. Increase `route_timeout` in configuration
+2. Check destination service performance
+3. Verify network latency to destination
+4. Consider destination load and capacity
+5. Monitor destination service health
+
+#### Problem: Slow Destination Response
+```
+Warning: Destination responding slowly
+- Response time: 1.8 seconds
+- Configured timeout: 2 seconds
+- Risk: Near timeout threshold
+```
+
+**Solution**:
+1. Monitor destination service performance
+2. Increase timeout if acceptable for use case
+3. Optimize destination service
+4. Consider load balancing destinations
+5. Review destination resource allocation
+
+#### Problem: High Forwarding Latency
+```
+Warning: High forwarding latency
+- Average forwarding time: 800ms
+- Expected: < 200ms
+- Destinations affected: 3
+```
+
+**Solution**:
+1. Check network connectivity and routing
+2. Monitor destination service response times
+3. Consider geographic proximity of destinations
+4. Review network infrastructure
+5. Optimize HTTP client configuration
+
+### HTTP Protocol Issues
+
+#### Problem: Destination Returns HTTP Errors
+```
+Warning: Destination returned HTTP error
+- Status code: 500 Internal Server Error
+- Destination response: {"error": "Database connection failed"}
+- Action: Error passed through to client
+```
+
+**Solution**:
+1. Check destination service logs
+2. Verify destination service health
+3. Monitor destination error rates
+4. Consider circuit breaker patterns
+5. Review destination service configuration
+
+#### Problem: Large Response Payload Issues
+```
+Warning: Large response from destination
+- Response size: 50MB
+- Processing time: 5 seconds
+- Memory usage: High
+```
+
+**Solution**:
+1. Implement response size limits
+2. Enable response streaming
+3. Compress responses if possible
+4. Monitor memory usage patterns
+5. Consider pagination for large datasets
+
+#### Problem: Response Format Issues
+```
+Warning: Unexpected response format from destination
+- Expected: JSON
+- Received: text/html
+- Content-Type: text/html
+```
+
+**Solution**:
+1. Verify destination API specification
+2. Check request headers sent to destination
+3. Validate destination endpoint configuration
+4. Review API version compatibility
+5. Monitor destination service changes
+
+### Connection Pool and Resource Issues
+
+#### Problem: Connection Pool Exhaustion
+```
+Error: HTTP connection pool exhausted
+- Active connections: 100
+- Pool size limit: 100
+- Queued requests: 50
+```
+
+**Solution**:
+1. Increase HTTP connection pool size
+2. Optimize connection reuse
+3. Reduce connection timeout
+4. Monitor connection lifecycle
+5. Consider destination-specific pools
+
+#### Problem: Memory Leaks in HTTP Client
+```
+Warning: Memory usage increasing over time
+- Initial memory: 100MB
+- Current memory: 500MB
+- Requests processed: 10,000
+```
+
+**Solution**:
+1. Review HTTP client configuration
+2. Check for unclosed connections
+3. Monitor response handling
+4. Implement connection lifecycle management
+5. Consider restarting workers periodically
+
+## Network and Infrastructure Issues
+
+### Load and Scalability Issues
+
+#### Problem: High Concurrent Request Load
+```
+Warning: High concurrent request processing
+- Concurrent requests: 57
+- Success rate: 100%
+- Average response time: 25ms
+```
+
+**Monitoring Recommendations**:
+1. Monitor system resource usage
+2. Track error rates across all stages
+3. Monitor destination service capacity
+4. Review worker process utilization
+5. Consider horizontal scaling
+
+#### Problem: Resource Exhaustion Under Load
+```
+Error: System resource exhaustion
+- CPU usage: 95%
+- Memory usage: 90%
+- Active connections: 500
+```
+
+**Solution**:
+1. Scale worker processes appropriately
+2. Optimize processing pipeline efficiency
+3. Implement request queuing
+4. Monitor system resource limits
+5. Consider hardware upgrades
+
+### Monitoring and Observability
+
+#### Problem: Missing Forwarding Metrics
+```
+Warning: Unable to track forwarding performance
+- Metrics available: Basic
+- Missing: Destination-specific timing
+```
+
+**Solution**:
+1. Enable detailed request logging
+2. Implement destination-specific metrics
+3. Monitor forwarding success rates
+4. Track timeout occurrences
+5. Set up alerting for failures
+
+#### Problem: Poor Error Visibility
+```
+Warning: Forwarding errors not well tracked
+- Error categorization: Basic
+- Root cause analysis: Difficult
+```
+
+**Solution**:
+1. Enhance error logging detail
+2. Implement structured error reporting
+3. Add destination health monitoring
+4. Create error dashboards
+5. Set up proactive alerting
+
+## Advanced Troubleshooting
+
+### End-to-End Request Tracing
+
+#### Problem: Request Processing Visibility
+```
+Challenge: Difficult to trace request through all stages
+- Stages: Validation → Filtering → Routing → Forwarding
+- Correlation: Request ID tracking
+```
+
+**Troubleshooting Steps**:
+1. Enable detailed logging for each stage
+2. Track request ID through entire pipeline
+3. Monitor processing time per stage
+4. Review error handling at each stage
+5. Implement distributed tracing if needed
+
+#### Problem: Performance Bottleneck Identification
+```
+Challenge: Identifying slowest stage in pipeline
+- Total processing time: 500ms
+- Stage breakdown: Unknown
+```
+
+**Solution**:
+1. Add timing instrumentation per stage
+2. Monitor stage-specific performance
+3. Identify bottleneck patterns
+4. Optimize critical path stages
+5. Balance processing across workers
+
+### Production Readiness Issues
+
+#### Problem: Destination Service Integration
+```
+Challenge: Integration with real destination services
+- Test environments: Mock servers
+- Production: Real services with different behavior
+```
+
+**Recommendations**:
+1. Test with real destination services
+2. Validate timeout configurations under load
+3. Monitor destination service dependencies
+4. Implement circuit breaker patterns
+5. Plan for destination service failures
+
+#### Problem: High Availability Requirements
+```
+Challenge: Ensuring system reliability
+- Uptime requirement: 99.9%
+- Error handling: Critical
+```
+
+**Solution**:
+1. Implement comprehensive health checks
+2. Monitor all system dependencies
+3. Plan for graceful degradation
+4. Implement retry mechanisms where appropriate
+5. Design for fault tolerance
+
 ## Best Practices
 
 ### Configuration Management
